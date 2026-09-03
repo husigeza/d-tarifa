@@ -27,7 +27,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### D Tarifa Részletek")
-    kereskedoi_dij_netto = st.number_input("MVM Kereskedői díj (Nettó Ft/kWh)", value=4.5, step=0.1)
+    kereskedoi_dij_netto = st.number_input("MVM Kereskedői díj (Nettó Ft/kWh)", value=13.7, step=0.1)
     rhd_netto = st.number_input("Rendszerhasználati díj (Nettó Ft/kWh)", value=23.4, step=0.1)
     afa_kulcs = st.number_input("ÁFA kulcs (%)", value=27.0, step=1.0)
 
