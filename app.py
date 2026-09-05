@@ -204,7 +204,11 @@ if uploaded_file is not None:
         col1.metric("Teljes fogyasztás", f"{teljes_fogyasztas:.2f} kWh")
         col2.metric("Időszaki sávhatár", f"{idoszaki_keret:.2f} kWh")
         col3.metric("Sávhatár feletti rész", f"{a1_piaci_fogyasztas:.2f} kWh")
-        col4.metric("D tarifa havi átlagára", f"{sulyozott_dinamikus_atlagar:.2f} Ft/kWh")
+        col4.metric(
+            "Fogyasztásból számolt D tarifa havi átlagára", 
+            f"{sulyozott_dinamikus_atlagar:.2f} Ft/kWh",
+            help="Ez a te egyedi fogyasztási profilod alapján súlyozott átlagár, nem pedig a tőzsdei árak egyszerű matematikai átlaga."
+        )
         
         st.markdown("---")
         res_col1, res_col2, res_col3 = st.columns(3)
