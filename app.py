@@ -237,20 +237,21 @@ if uploaded_file is not None:
             secondary_y=False,
         )
         
+        # Dinamikus ár megjelenítése végig a teljes időszakra
         fig.add_trace(
-            go.Scatter(x=df['Datum_Ido'], y=df['Alkalmazott_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár alatt)",
+            go.Scatter(x=df['Datum_Ido'], y=df['Brutto_Negyedoras_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár alatt)",
                        line=dict(color='green', width=2)),
             secondary_y=True,
         )
         
-        is_high = df['Alkalmazott_Ar_Ft_kWh'] > a1_piaci_ar_brutto
+        is_high = df['Brutto_Negyedoras_Ar_Ft_kWh'] > a1_piaci_ar_brutto
         red_mask = is_high | is_high.shift(1).fillna(False) | is_high.shift(-1).fillna(False)
         
         df_red = df.copy()
-        df_red.loc[~red_mask, 'Alkalmazott_Ar_Ft_kWh'] = np.nan
+        df_red.loc[~red_mask, 'Brutto_Negyedoras_Ar_Ft_kWh'] = np.nan
         
         fig.add_trace(
-            go.Scatter(x=df_red['Datum_Ido'], y=df_red['Alkalmazott_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár felett)",
+            go.Scatter(x=df_red['Datum_Ido'], y=df_red['Brutto_Negyedoras_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár felett)",
                        line=dict(color='red', width=2), connectgaps=False),
             secondary_y=True,
         )
