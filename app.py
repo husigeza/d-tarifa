@@ -12,14 +12,13 @@ st.set_page_config(page_title="E-ON D-Tarifa Kalkulátor", layout="wide")
 st.title("⚡ Valós idejű E-ON D-Tarifa vs. A1 Árszabás Kalkulátor")
 st.markdown("""
 Töltsd fel az E-ON távleolvasási portálról letöltött 15 perces felbontású fogyasztási adatokat (XLSX vagy CSV formátum).
-Az alkalmazás automatikusan felismeri az időszakot, és bekéri a szükséges **MNB EUR/HUF deviza középárfolyamot** 
-és a **HUPX DAM árakat**, majd **negyedórás pontossággal, időrendben** számolja ki a valós D tarifa költséget.
+Az alkalmazás automatikusan lekéri a szükséges **MNB EUR/HUF deviza középárfolyamot** és a **HUPX DAM árakat**, 
+majd összehasonlítja a hagyományos A1 tarifát a D tarifa kétféle (idősoros és havi átlagáras) értelmezésével.
 """)
 
 # --- BEÁLLÍTÁSOK / PARAMÉTEREK ---
 with st.sidebar:
     st.header("⚙️ Tarifális paraméterek")
-    st.info("Az MVM Next és az MEKH publikus adatai alapján.")
     
     a1_kedv_ar_brutto = st.number_input("A1 kedvezményes ár (Bruttó Ft/kWh)", value=36.0, step=0.1)
     a1_piaci_ar_brutto = st.number_input("A1 piaci ár (Bruttó Ft/kWh)", value=70.1, step=0.1)
@@ -68,7 +67,6 @@ def get_mnb_exchange_rates(start_date, end_date):
     except Exception as e:
         st.warning(f"Nem sikerült letölteni az MNB árfolyamokat. Hiba: {e}")
     
-    st.info("Alapértelmezett 395 HUF/EUR árfolyamot használunk hiba miatt.")
     all_dates = pd.date_range(start=start_date, end=end_date).date
     return pd.DataFrame({'EUR_HUF': [395.0] * len(all_dates)}, index=all_dates)
 
@@ -96,8 +94,6 @@ def get_hupx_prices(start_date, end_date):
             df_prices = df_prices.set_index('Datum_Ido')[['HUPX_EUR_MWh']]
             df_resampled = df_prices.resample('15min').ffill()
             return df_resampled
-        else:
-            st.error(f"Hiba a HUPX adatok letöltésekor. Kód: {response.status_code}")
     except Exception as e:
         st.error(f"API hiba a HUPX adatok letöltésekor: {e}")
         
@@ -150,12 +146,8 @@ if uploaded_file is not None:
         df['Napi_HUPX_Ft_kWh'] = (df['HUPX_EUR_MWh'] / 1000.0) * df['EUR_HUF']
         df['Brutto_Negyedoras_Ar_Ft_kWh'] = (df['Napi_HUPX_Ft_kWh'] + kereskedoi_dij_netto + rhd_netto) * afa_szorzo
         
-        # 2. Idősoros (kronologikus) pontos D tarifa és A1 számítás
-        # Kiszámítjuk a kumulált fogyasztást minden egyes 15 perces lépésben
+        # 2. Idősoros (kronologikus) pontos D tarifa számítás
         df['Kumulalt_Fogyasztas'] = df['Fogyasztas_kWh'].cumsum()
-        
-        # Meghatározzuk az egyes blokkokban érvényes tényleges árat és költséget
-        # Előző kumulált fogyasztás a blokk elején
         df['Elözo_Kumulalt'] = df['Kumulalt_Fogyasztas'].shift(1).fillna(0)
         
         def calculate_exact_costs(row, limit, a1_price):
@@ -165,27 +157,22 @@ if uploaded_file is not None:
             dyn_price = row['Brutto_Negyedoras_Ar_Ft_kWh']
             
             if cons <= 0:
-                return 0.0, 0.0, a1_price
+                return 0.0, a1_price
                 
             if curr_cum <= limit:
-                # Teljesen a kedvezményes sávban van
                 cost_d = cons * a1_price
                 applied_price = a1_price
             elif prev_cum >= limit:
-                # Teljesen a sávhatár felett van (pontos negyedórás dinamikus ár)
                 cost_d = cons * dyn_price
                 applied_price = dyn_price
             else:
-                # Részben alatta, részben felette van ebben a 15 percben
                 under_kwh = limit - prev_cum
                 over_kwh = curr_cum - limit
                 cost_d = (under_kwh * a1_price) + (over_kwh * dyn_price)
-                # Grafikonhoz súlyozott átlagár erre a 15 percre
                 applied_price = cost_d / cons
                 
             return cost_d, applied_price
             
-        # Alkalmazzuk soronként
         results = df.apply(lambda row: calculate_exact_costs(row, idoszaki_keret, a1_kedv_ar_brutto), axis=1)
         df['Negyedoras_D_Koltseg_Ft'] = [r[0] for r in results]
         df['Alkalmazott_Ar_Ft_kWh'] = [r[1] for r in results]
@@ -193,42 +180,50 @@ if uploaded_file is not None:
         tullepes = df[df['Kumulalt_Fogyasztas'] > idoszaki_keret]
         tullepes_idopontja = tullepes['Datum_Ido'].min() if not tullepes.empty else None
         
+        # Fogyasztási összesítések
         teljes_fogyasztas = df['Fogyasztas_kWh'].sum()
         a1_kedvezmenyes_fogyasztas = min(teljes_fogyasztas, idoszaki_keret)
         a1_piaci_fogyasztas = max(0, teljes_fogyasztas - idoszaki_keret)
         
-        # A1 Tarifa Költség
+        # --- A HÁROMFÉLE KÖLTSÉG KISZÁMÍTÁSA ---
+        
+        # A) Hagyományos A1 Költség
         a1_osszkoltseg = (a1_kedvezmenyes_fogyasztas * a1_kedv_ar_brutto) + (a1_piaci_fogyasztas * a1_piaci_ar_brutto)
         
-        # D Tarifa Költség (A pontos, negyedórás idősoros összeg)
-        d_tarifa_osszkoltseg = df['Negyedoras_D_Koltseg_Ft'].sum()
+        # B) D Tarifa - Idősoros (Kronologikus) Költség
+        d_tarifa_kronologikus_osszkoltseg = df['Negyedoras_D_Koltseg_Ft'].sum()
         
+        # C) D Tarifa - MVM Havi Súlyozott Átlagáras Költség
+        df['Teljes_Dinamikus_Koltseg'] = df['Fogyasztas_kWh'] * df['Brutto_Negyedoras_Ar_Ft_kWh']
+        sulyozott_dinamikus_atlagar = df['Teljes_Dinamikus_Koltseg'].sum() / teljes_fogyasztas if teljes_fogyasztas > 0 else 0
+        d_tarifa_atlagaras_osszkoltseg = (a1_kedvezmenyes_fogyasztas * a1_kedv_ar_brutto) + (a1_piaci_fogyasztas * sulyozott_dinamikus_atlagar)
+
         # --- MEGJELENÍTÉS ---
         st.subheader("📊 Fogyasztási Összesítő")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Vizsgált időszak", f"{napok_szama} nap")
-        col2.metric("Teljes fogyasztás", f"{teljes_fogyasztas:.2f} kWh")
-        col3.metric("Átlagos HUPX ár", f"{df['HUPX_EUR_MWh'].mean():.2f} EUR/MWh")
-        col4.metric("Időszaki sávhatár", f"{idoszaki_keret:.2f} kWh")
+        col1.metric("Teljes fogyasztás", f"{teljes_fogyasztas:.2f} kWh")
+        col2.metric("Időszaki sávhatár", f"{idoszaki_keret:.2f} kWh")
+        col3.metric("Sávhatár feletti rész", f"{a1_piaci_fogyasztas:.2f} kWh")
+        col4.metric("D tarifa havi átlagára", f"{sulyozott_dinamikus_atlagar:.2f} Ft/kWh")
         
         st.markdown("---")
-        res_col1, res_col2 = st.columns(2)
+        res_col1, res_col2, res_col3 = st.columns(3)
         
         with res_col1:
-            st.success("### Hagyományos A1 Tarifa")
+            st.success("### Hagyományos A1")
             st.metric("Becsült fizetendő", f"{a1_osszkoltseg:,.0f} Ft".replace(',', ' '))
-            st.write(f"**Kedvezményes sáv:** {a1_kedvezmenyes_fogyasztas:.2f} kWh ({a1_kedv_ar_brutto} Ft/kWh)")
-            st.write(f"**Piaci sáv:** {a1_piaci_fogyasztas:.2f} kWh ({a1_piaci_ar_brutto} Ft/kWh)")
+            st.write(f"**Kedvezményes:** {a1_kedvezmenyes_fogyasztas:.2f} kWh ({a1_kedv_ar_brutto} Ft)")
+            st.write(f"**Piaci áras:** {a1_piaci_fogyasztas:.2f} kWh ({a1_piaci_ar_brutto} Ft)")
             
         with res_col2:
-            if d_tarifa_osszkoltseg < a1_osszkoltseg:
-                st.info("### 🟢 Dinamikus D Tarifa (Megéri)")
-            else:
-                st.warning("### 🔴 Dinamikus D Tarifa (Nem éri meg)")
-                
-            st.metric("Becsült fizetendő", f"{d_tarifa_osszkoltseg:,.0f} Ft".replace(',', ' '))
-            st.write(f"**Kedvezményes sáv:** {a1_kedvezmenyes_fogyasztas:.2f} kWh")
-            st.write(f"**Dinamikus sáv (pontos negyedórás):** {a1_piaci_fogyasztas:.2f} kWh")
+            st.info("### D Tarifa (Idősoros)")
+            st.metric("Becsült fizetendő", f"{d_tarifa_kronologikus_osszkoltseg:,.0f} Ft".replace(',', ' '))
+            st.caption("A sávhatár átlépésének pillanatától a pontos negyedórás tőzsdei árakkal számolva.")
+            
+        with res_col3:
+            st.warning("### D Tarifa (Átlagáras)")
+            st.metric("Becsült fizetendő", f"{d_tarifa_atlagaras_osszkoltseg:,.0f} Ft".replace(',', ' '))
+            st.caption("Az MVM által használt havi súlyozott átlagárral számolva a sávhatár feletti részre.")
             
         st.markdown("---")
         st.subheader("Fogyasztás és Alkalmazott Ár Alakulása (Idősoros elszámolás)")
@@ -236,21 +231,18 @@ if uploaded_file is not None:
         # --- KÖZÖS PLOTLY GRAFIKON LÉTREHOZÁSA ---
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # 1. Tengely: Fogyasztás (KÉK terület)
         fig.add_trace(
             go.Scatter(x=df['Datum_Ido'], y=df['Fogyasztas_kWh'], name="Fogyasztás (kWh)",
                        fill='tozeroy', line=dict(color='blue', width=1)),
             secondary_y=False,
         )
         
-        # 2. Tengely: Alkalmazott Ár (ZÖLD bázis - A1 ár vagy piaci ár alatt)
         fig.add_trace(
             go.Scatter(x=df['Datum_Ido'], y=df['Alkalmazott_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár alatt)",
                        line=dict(color='green', width=2)),
             secondary_y=True,
         )
         
-        # Piros réteg rárajzolása a magas árakra
         is_high = df['Alkalmazott_Ar_Ft_kWh'] > a1_piaci_ar_brutto
         red_mask = is_high | is_high.shift(1).fillna(False) | is_high.shift(-1).fillna(False)
         
@@ -263,16 +255,14 @@ if uploaded_file is not None:
             secondary_y=True,
         )
         
-        # Vízszintes vonal: A1 emelt árszint (piaci ár)
         fig.add_hline(y=a1_piaci_ar_brutto, line_width=2, line_dash="dash", line_color="gray", 
                       annotation_text=f"A1 piaci ár ({a1_piaci_ar_brutto} Ft)", annotation_position="top left",
                       secondary_y=True)
 
-        # Függőleges vonal és felirat a sávhatár átlépéséhez (Szaggatott narancssárga)
         if tullepes_idopontja:
             fig.add_vline(x=tullepes_idopontja, line_width=2, line_dash="dash", line_color="orange")
             fig.add_annotation(x=tullepes_idopontja, y=1.05, yref='paper',
-                               text="Sávhatár túllépése (D tarifa indul)", 
+                               text="Sávhatár túllépése", 
                                showarrow=False, font=dict(color="orange", size=12))
             
         fig.update_layout(
