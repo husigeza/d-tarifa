@@ -216,14 +216,16 @@ if uploaded_file is not None:
             st.write(f"**Piaci áras:** {a1_piaci_fogyasztas:.2f} kWh ({a1_piaci_ar_brutto} Ft)")
             
         with res_col2:
+            st.warning("### D Tarifa (Átlagáras)")
+            st.metric("Becsült fizetendő", f"{d_tarifa_atlagaras_osszkoltseg:,.0f} Ft".replace(',', ' '))
+            st.write(f"**Kedvezményes:** {a1_kedvezmenyes_fogyasztas:.2f} kWh ({a1_kedv_ar_brutto} Ft)")
+            st.write(f"**Dinamikus áras:** {a1_piaci_fogyasztas:.2f} kWh ({sulyozott_dinamikus_atlagar:.2f} Ft)")
+            st.caption("Az MVM által használt havi súlyozott átlagárral számolva a sávhatár feletti részre.")
+            
+        with res_col3:
             st.info("### D Tarifa (Idősoros)")
             st.metric("Becsült fizetendő", f"{d_tarifa_kronologikus_osszkoltseg:,.0f} Ft".replace(',', ' '))
             st.caption("A sávhatár átlépésének pillanatától a pontos negyedórás tőzsdei árakkal számolva.")
-            
-        with res_col3:
-            st.warning("### D Tarifa (Átlagáras)")
-            st.metric("Becsült fizetendő", f"{d_tarifa_atlagaras_osszkoltseg:,.0f} Ft".replace(',', ' '))
-            st.caption("Az MVM által használt havi súlyozott átlagárral számolva a sávhatár feletti részre.")
             
         st.markdown("---")
         st.subheader("Fogyasztás és Alkalmazott Ár Alakulása (Idősoros elszámolás)")
