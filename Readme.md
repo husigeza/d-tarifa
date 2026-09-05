@@ -3,8 +3,8 @@
 ## Összefoglalás
 Ez az interaktív webalkalmazás segít kiszámolni, hogyan alakulna a villanyszámlád a hagyományos (A1) és az új dinamikus (D) árszabás szerint. Az E-ON távleolvasási portáljáról letöltött 15 perces fogyasztási adatok alapján a program automatikusan lekéri az adott napokra érvényes MNB devizaárfolyamokat, valamint a HUPX (magyar villamosenergia-tőzsde) órás árait. Ezután negyedórás, idősoros pontossággal kiszámolja a sávhatár feletti fogyasztás valós költségét a D tarifa szabályai szerint, és interaktív grafikonon vizualizálja az eredményt.
 
-## 🌐 Próbáld ki online (Live Demo)
-Az alkalmazás telepítés nélkül is elérhető és kipróbálható az alábbi linken:
+## 🌐 Online verzió
+Az alkalmazás elérhető az alábbi linken:
 **[E-ON D-Tarifa Kalkulátor ](https://d-tarifa-gbthkjck9ylsloyrlhzusk.streamlit.app/)**
 
 ---
