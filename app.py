@@ -39,14 +39,11 @@ def get_mnb_exchange_rates(start_date, end_date):
     
     all_dates_list = []
     all_rates_list = []
-    
     current_start = start_date
     
     try:
-        # 30 napos darabokban (chunk-okban) kérjük le az adatokat, hogy elkerüljük az MNB API timeout hibáját
         while current_start <= end_date:
             current_end = min(current_start + timedelta(days=30), end_date)
-            
             body = f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://www.mnb.hu/webservices/">
                <soapenv:Header/>
                <soapenv:Body>
@@ -70,19 +67,16 @@ def get_mnb_exchange_rates(start_date, end_date):
                         all_dates_list.append(datetime.strptime(date_str, '%Y-%m-%d').date())
                         all_rates_list.append(float(rate_str))
             
-            # Következő iteráció indítása
             current_start = current_end + timedelta(days=1)
             
         if all_dates_list:
             df_rates = pd.DataFrame({'Datum': all_dates_list, 'EUR_HUF': all_rates_list})
-            # Duplikátumok eltávolítása (biztonsági okokból)
             df_rates = df_rates.drop_duplicates(subset=['Datum']).set_index('Datum')
-            
             all_dates = pd.date_range(start=start_date, end=end_date).date
             df_all = pd.DataFrame(index=all_dates)
             return df_all.join(df_rates).ffill().bfill()
         else:
-            raise ValueError("Nem érkezett érvényes adat az MNB-től a megadott időszakra.")
+            raise ValueError("Nem érkezett adat az MNB-től.")
             
     except Exception as e:
         st.warning(f"Nem sikerült letölteni az MNB árfolyamokat. Hiba: {e}")
@@ -275,13 +269,15 @@ if uploaded_file is not None:
         df_red = df.copy()
         df_red.loc[~red_mask, 'Brutto_Negyedoras_Ar_Ft_kWh'] = np.nan
         
+        # Itt módosult a piros szín egy lágyabb, kevésbé élénk árnyalatra (indianred)
         fig.add_trace(
             go.Scatter(x=df_red['Datum_Ido'], y=df_red['Brutto_Negyedoras_Ar_Ft_kWh'], name="D Tarifa ár (A1 piaci ár felett)",
-                       line=dict(color='red', width=2), connectgaps=False),
+                       line=dict(color='indianred', width=2), connectgaps=False),
             secondary_y=True,
         )
         
-        fig.add_hline(y=a1_piaci_ar_brutto, line_width=2, line_dash="dash", line_color="gray", 
+        # Itt módosult az A1 piaci ár vonala narancssárgára és vastagabbra
+        fig.add_hline(y=a1_piaci_ar_brutto, line_width=3, line_dash="dash", line_color="orange", 
                       annotation_text=f"A1 piaci ár ({a1_piaci_ar_brutto} Ft)", annotation_position="top left",
                       secondary_y=True)
 
