@@ -34,41 +34,60 @@ with st.sidebar:
 
 @st.cache_data(ttl=3600)
 def get_mnb_exchange_rates(start_date, end_date):
+    url = 'http://www.mnb.hu/arfolyamok.asmx'
+    headers = {'Content-Type': 'text/xml; charset=utf-8'}
+    
+    all_dates_list = []
+    all_rates_list = []
+    
+    current_start = start_date
+    
     try:
-        url = 'http://www.mnb.hu/arfolyamok.asmx'
-        headers = {'Content-Type': 'text/xml; charset=utf-8'}
-        body = f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://www.mnb.hu/webservices/">
-           <soapenv:Header/>
-           <soapenv:Body>
-              <tem:GetExchangeRates>
-                 <tem:startDate>{start_date.strftime('%Y-%m-%d')}</tem:startDate>
-                 <tem:endDate>{end_date.strftime('%Y-%m-%d')}</tem:endDate>
-                 <tem:currencyNames>EUR</tem:currencyNames>
-              </tem:GetExchangeRates>
-           </soapenv:Body>
-        </soapenv:Envelope>"""
-        response = requests.post(url, data=body, headers=headers, timeout=10)
-        if response.status_code == 200:
-            root = ET.fromstring(response.text)
-            result = root.find('.//{http://www.mnb.hu/webservices/}GetExchangeRatesResult').text
-            if result:
-                res_root = ET.fromstring(result)
-                dates, rates = [], []
-                for day in res_root.findall('Day'):
-                    date_str = day.get('date')
-                    rate_str = day.find('Rate').text.replace(',', '.')
-                    dates.append(datetime.strptime(date_str, '%Y-%m-%d').date())
-                    rates.append(float(rate_str))
-                
-                df_rates = pd.DataFrame({'Datum': dates, 'EUR_HUF': rates}).set_index('Datum')
-                all_dates = pd.date_range(start=start_date, end=end_date).date
-                df_all = pd.DataFrame(index=all_dates)
-                return df_all.join(df_rates).ffill().bfill() 
+        # 30 napos darabokban (chunk-okban) kérjük le az adatokat, hogy elkerüljük az MNB API timeout hibáját
+        while current_start <= end_date:
+            current_end = min(current_start + timedelta(days=30), end_date)
+            
+            body = f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://www.mnb.hu/webservices/">
+               <soapenv:Header/>
+               <soapenv:Body>
+                  <tem:GetExchangeRates>
+                     <tem:startDate>{current_start.strftime('%Y-%m-%d')}</tem:startDate>
+                     <tem:endDate>{current_end.strftime('%Y-%m-%d')}</tem:endDate>
+                     <tem:currencyNames>EUR</tem:currencyNames>
+                  </tem:GetExchangeRates>
+               </soapenv:Body>
+            </soapenv:Envelope>"""
+            
+            response = requests.post(url, data=body, headers=headers, timeout=15)
+            if response.status_code == 200:
+                root = ET.fromstring(response.text)
+                result = root.find('.//{http://www.mnb.hu/webservices/}GetExchangeRatesResult').text
+                if result:
+                    res_root = ET.fromstring(result)
+                    for day in res_root.findall('Day'):
+                        date_str = day.get('date')
+                        rate_str = day.find('Rate').text.replace(',', '.')
+                        all_dates_list.append(datetime.strptime(date_str, '%Y-%m-%d').date())
+                        all_rates_list.append(float(rate_str))
+            
+            # Következő iteráció indítása
+            current_start = current_end + timedelta(days=1)
+            
+        if all_dates_list:
+            df_rates = pd.DataFrame({'Datum': all_dates_list, 'EUR_HUF': all_rates_list})
+            # Duplikátumok eltávolítása (biztonsági okokból)
+            df_rates = df_rates.drop_duplicates(subset=['Datum']).set_index('Datum')
+            
+            all_dates = pd.date_range(start=start_date, end=end_date).date
+            df_all = pd.DataFrame(index=all_dates)
+            return df_all.join(df_rates).ffill().bfill()
+        else:
+            raise ValueError("Nem érkezett érvényes adat az MNB-től a megadott időszakra.")
+            
     except Exception as e:
         st.warning(f"Nem sikerült letölteni az MNB árfolyamokat. Hiba: {e}")
-    
-    all_dates = pd.date_range(start=start_date, end=end_date).date
-    return pd.DataFrame({'EUR_HUF': [395.0] * len(all_dates)}, index=all_dates)
+        all_dates = pd.date_range(start=start_date, end=end_date).date
+        return pd.DataFrame({'EUR_HUF': [395.0] * len(all_dates)}, index=all_dates)
 
 @st.cache_data(ttl=3600)
 def get_hupx_prices(start_date, end_date):
